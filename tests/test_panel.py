@@ -10,6 +10,7 @@ with tempfile.TemporaryDirectory(prefix="music-panel-test-") as directory:
     target = Path(directory)
     shutil.copy2(root / "panel.qml", target / "shell.qml")
     shutil.copy2(root.parent / "MusicWidget.qml", target / "MusicWidget.qml")
+    shutil.copy2(root.parent / "music.svg", target / "music.svg")
     for module in ("Ui", "Commons"):
         (target / module).symlink_to(Path("/usr/share/omarchy/shell") / module)
     config = target / "config/lisim-ytmusic"

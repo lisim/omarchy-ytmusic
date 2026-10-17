@@ -58,7 +58,6 @@ BarWidget {
   }
 
   readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle || activePlayer.trackArtist)
-  readonly property string playIcon: activePlayer && activePlayer.isPlaying ? "󰏤" : "󰗃"
   readonly property string title: activePlayer ? (activePlayer.trackTitle || "YouTube Music TUI (lisim)") : "YouTube Music TUI (lisim)"
   readonly property string artist: activePlayer ? (activePlayer.trackArtist || "") : ""
 
@@ -78,27 +77,27 @@ BarWidget {
     anchors.centerIn: parent
     spacing: Style.space(6)
 
-    Text {
+    Image {
       id: glyph
-      textFormat: Text.PlainText
+      objectName: "musicBarIcon"
       anchors.verticalCenter: parent.verticalCenter
-      text: root.playIcon
-      color: activePlayer && activePlayer.isPlaying ? root.bar.barForeground : Qt.darker(root.bar.barForeground, 1.5)
-      font.family: root.bar.fontFamily
-      font.pixelSize: Style.font.body
-      Behavior on color {
-        enabled: !root.bar || root.bar.foregroundAnimationEnabled
-        ColorAnimation { duration: 160 }
-      }
+      width: Style.space(18)
+      height: width
+      source: Qt.resolvedUrl("music.svg")
+      sourceSize.width: width
+      sourceSize.height: height
+      fillMode: Image.PreserveAspectFit
+      opacity: root.hasMedia && !activePlayer.isPlaying ? 0.65 : 1
     }
 
     Item {
       id: scrollClip
+      objectName: "musicBarTitle"
       width: Math.min(root.maxLabelWidth, labelText.implicitWidth)
       height: glyph.height
       clip: true
       anchors.verticalCenter: parent.verticalCenter
-      visible: !root.bar.vertical && root.title !== ""
+      visible: !root.bar.vertical && root.hasMedia
 
       Text {
         id: labelText
@@ -113,7 +112,7 @@ BarWidget {
 
         NumberAnimation on x {
           id: scrollAnim
-          running: labelText.needsScroll && !root.popupOpen && !root.bar.vertical
+          running: scrollClip.visible && labelText.needsScroll && !root.popupOpen
           loops: Animation.Infinite
           duration: Math.max(6000, labelText.implicitWidth * 25)
           from: scrollClip.width

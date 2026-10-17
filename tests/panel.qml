@@ -69,6 +69,13 @@ ShellRoot {
         check(widget.status === Loader.Ready, "widget failed to load")
         check(widget.item.backend === "custom", "first-run settings did not load")
         check(widget.item.activePlayer === music, "wrong player selected")
+        var icon = checks.findChild(widget.item, "musicBarIcon")
+        var barTitle = checks.findChild(widget.item, "musicBarTitle")
+        check(icon !== null && icon.status === Image.Ready, "SVG bar icon did not load")
+        check(barTitle.visible, "playing title is hidden")
+        widget.item.players = []
+        check(!barTitle.visible && icon.visible, "idle bar should show only the icon")
+        widget.item.players = [browser, music]
         widget.item.togglePlayback()
         check(music.toggles === 1 && music.isPlaying, "playback toggle did not reach music")
         music.canTogglePlaying = false

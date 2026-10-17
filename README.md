@@ -42,6 +42,8 @@ The customised player is a separate [fork of WakaTaira’s TUI](https://github.c
 
 ## Controls
 
+The bar shows a bundled SVG icon, so it does not depend on an icon font. It stays icon-only when idle and shows the track title/artist when music is loaded.
+
 | Gesture | Action |
 | --- | --- |
 | Left-click | Launch, hide or restore the TUI |
