@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_ID = "lisim.ytmusic"
@@ -35,13 +36,12 @@ class Paths:
         self.bindings = self.config_root / "hypr/bindings.lua"
 
     def binary(self, backend):
-        if backend not in ("custom", "original"):
-            raise ValueError("Unknown player choice")
+        if backend != "custom":
+            raise ValueError("Original is no longer supported. Run Player setup to migrate.")
         return self.data / backend / "bin/ytmusic-tui"
 
-    def auth(self, backend):
-        directory = self.config / "custom-tui" if backend == "custom" else self.user_home / ".config/ytmusic-tui"
-        return directory / "browser.json"
+    def auth(self):
+        return self.config / "custom-tui/browser.json"
 
 
 def run(args, **kwargs):
@@ -72,15 +72,40 @@ def load_settings(paths):
 
 
 def player_env(paths, backend, state=None):
+    paths.binary(backend)  # Reject legacy backends before constructing any auth command.
     env = dict(os.environ)
     env.pop("NO_COLOR", None)
     env.pop("YTMUSIC_TUI_CONFIG_DIR", None)
     env.pop("YTMUSIC_TUI_AUTH_BROWSER", None)
-    if backend == "custom":
-        env["YTMUSIC_TUI_CONFIG_DIR"] = str(paths.config / "custom-tui")
-        if state and state.get("auto_refresh") and state["browser"] not in ("manual", "later"):
-            env["YTMUSIC_TUI_AUTH_BROWSER"] = state["browser"]
+    check_auth_path(paths)
+    env["YTMUSIC_TUI_CONFIG_DIR"] = str(paths.config / "custom-tui")
+    if state and state.get("auto_refresh") and state["browser"] not in ("manual", "later"):
+        env["YTMUSIC_TUI_AUTH_BROWSER"] = state["browser"]
     return env
+
+
+def check_auth_path(paths):
+    # An old override or symlink must not reconnect the fork to Original's cookies.
+    auth = paths.auth()
+    config = auth.parent / "config.toml"
+    if auth.parent.is_symlink() or auth.is_symlink() or config.is_symlink():
+        raise ValueError("Player setup requires regular files in custom-tui; remove its symlink before continuing.")
+    if config.exists():
+        override = tomllib.loads(config.read_text()).get("auth", {}).get("browser_auth_path")
+        if override is not None and Path(override).expanduser().resolve() != auth.resolve():
+            raise ValueError("Remove the browser_auth_path override from custom-tui/config.toml; this plugin uses only its own browser.json.")
+
+
+def player_ready(paths, state):
+    if not state or state["backend"] != "custom" or state.get("auth_pending"):
+        return False
+    binary = paths.binary("custom")
+    try:
+        spec = json.loads((ROOT / "backends.json").read_text())["custom"]
+        receipt = json.loads((binary.parent / "source.json").read_text())
+        return binary.is_file() and receipt == spec and state.get("commit") == spec["commit"]
+    except (OSError, ValueError, KeyError):
+        return False
 
 
 def hypr_json(command):
@@ -109,6 +134,10 @@ def toggle(paths, autoplay=False):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
+        state = load_settings(paths)
+        if not player_ready(paths, state):
+            configure()
+            return
         window = own_window()
         if window:
             address = window["address"]
@@ -124,10 +153,6 @@ def toggle(paths, autoplay=False):
                 run(["hyprctl", "dispatch", f'hl.dsp.window.move({{window={selector}, workspace="{PARKING}", follow=false}})'], stdout=subprocess.DEVNULL)
                 return
             run(["hyprctl", "dispatch", f'hl.dsp.focus({{window={selector}}})'], stdout=subprocess.DEVNULL)
-            return
-        state = load_settings(paths)
-        if not state or not paths.binary(state["backend"]).is_file():
-            configure()
             return
         # MPRIS has a single name: do not start a second, unrelated player.
         bus = subprocess.run(["busctl", "--user", "--timeout=2", "get-property",
@@ -165,12 +190,15 @@ def confirm(prompt, default=False):
 def build_backend(paths, backend, spec):
     if not re.fullmatch(r"[0-9a-f]{40}", spec["commit"]):
         raise ValueError("Invalid pinned source revision")
-    allowed = {"https://github.com/lisim/ytmusic-tui.git", "https://github.com/WakaTaira/ytmusic-tui.git"}
-    if spec["repository"] not in allowed:
+    if spec["repository"] != "https://github.com/lisim/ytmusic-tui.git":
         raise ValueError("Unexpected source repository")
     binary = paths.binary(backend)
     receipt = binary.parent / "source.json"
-    if binary.exists() and receipt.exists() and json.loads(receipt.read_text()).get("commit") == spec["commit"]:
+    try:
+        installed = json.loads(receipt.read_text())
+    except (OSError, ValueError):
+        installed = None
+    if binary.exists() and installed == spec:
         print("This player version is already built.")
         return
     paths.cache.mkdir(parents=True, exist_ok=True)
@@ -251,26 +279,34 @@ def setup(paths):
     if missing:
         print("Missing: " + ", ".join(missing))
         raise ValueError("Install prerequisites: omarchy pkg add rustup base-devel mpv yt-dlp")
-    backend = ("custom", "original")[choose("Choose your player", [
-        "Customised (recommended): helper, Home cards/mixes, terminal colours, volume and Up Next",
-        "Original upstream: basic controls; no custom helper, panel volume or Up Next"])]
-    print("\nAUTHENTICATION: both players use YouTube session cookies, not Google OAuth.")
+    backend = "custom"
+    previous = load_settings(paths)
+    migrating = previous is not None and not player_ready(paths, previous)
+    print("Installs lisim's customised fork of WakaTaira's ytmusic-tui, including stricter cookie-domain filtering.")
+    if migrating:
+        print("This installation needs the current fork and fresh sign-in. Original is no longer supported; old cookies are not imported or reused for migration.")
+    check_auth_path(paths)
+    print("\nAUTHENTICATION: this player uses YouTube session cookies, not Google OAuth.")
     print("Browser selection reads its local cookie store and copies YouTube cookies to browser.json.")
     print("Manual sign-in avoids reading the browser store, but still saves cookies you paste.")
     print("The local file is plaintext: treat it like a password. The player sends auth to YouTube, not the plugin author.")
-    print("Choose 'later' to skip importing cookies. Existing saved sign-in is kept.")
+    print("Fresh sign-in is required for this migration." if migrating else "Choose 'later' to skip importing cookies. Existing saved sign-in is kept.")
     browser = BROWSERS[choose("Which browser is signed into YouTube Music?", list(BROWSERS), 0)]
+    if migrating and browser == "later":
+        raise ValueError("Migration requires fresh sign-in. Old builds remain disabled; saved files are untouched.")
     if browser != "later" and not confirm("Allow copying YouTube session cookies for this player?", False):
-        raise ValueError("Sign-in cancelled; no cookies were read. Run setup and choose 'later' to skip sign-in.")
-    refresh = browser not in ("manual", "later") and backend == "custom" and confirm("Allow re-reading this browser's YouTube cookies when the session expires (including while playing or using ratings)?", False)
+        raise ValueError("Sign-in cancelled; no cookies were read. Migration stays disabled until fresh sign-in." if migrating else "Sign-in cancelled; no cookies were read. Run setup and choose 'later' to skip sign-in.")
+    refresh = browser not in ("manual", "later") and confirm("Allow re-reading this browser's YouTube cookies when the session expires (including while playing or using ratings)?", False)
     shortcut = confirm("Use Super+Shift+M for show/hide? This replaces its current Music shortcut.")
     specs = json.loads((ROOT / "backends.json").read_text())
     paths.config.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if migrating and previous["backend"] == "custom":
+        # Building can finish before auth fails; keep every retry blocked until sign-in succeeds.
+        atomic_write(paths.settings, json.dumps(dict(previous, auth_pending=True), indent=2) + "\n")
     build_backend(paths, backend, specs[backend])
-    if backend == "custom":
-        config = paths.config / "custom-tui/config.toml"
-        if not config.exists():
-            atomic_write(config, '[player]\nvolume = 40\naudio_quality = "high"\n\n[ui]\ntheme = "terminal"\n')
+    config = paths.config / "custom-tui/config.toml"
+    if not config.exists():
+        atomic_write(config, '[player]\nvolume = 40\naudio_quality = "high"\n\n[ui]\ntheme = "terminal"\n')
     if browser != "later":
         command = [paths.binary(backend), "auth"]
         if browser != "manual":
@@ -278,7 +314,7 @@ def setup(paths):
         try:
             run(command, env=player_env(paths, backend), timeout=600 if browser == "manual" else 45)
         except subprocess.CalledProcessError:
-            if browser == "manual" or not confirm("Browser sign-in failed. Use the upstream manual header-paste method now?"):
+            if browser == "manual" or not confirm("Browser sign-in failed. Paste fresh YouTube request headers manually now?"):
                 raise ValueError("Sign-in was not completed. Run setup again to retry.")
             run([paths.binary(backend), "auth"], env=player_env(paths, backend), timeout=600)
             browser, refresh = "manual", False
@@ -292,13 +328,13 @@ def setup(paths):
 
 def play(paths, autoplay=False):
     state = load_settings(paths)
-    if not state:
-        raise ValueError("Run setup first.")
+    if not player_ready(paths, state):
+        raise ValueError("Run Player setup to install the current customised player. Original is no longer supported.")
     backend = state["backend"]
     binary = paths.binary(backend)
     env = player_env(paths, backend, state)
     args = [str(binary)]
-    if autoplay and backend == "custom":
+    if autoplay:
         args.append("--autoplay")
     os.execve(binary, args, env)
 
@@ -307,8 +343,8 @@ def rating(paths, action, video_id):
     if action not in ("get", "LIKE", "DISLIKE", "INDIFFERENT") or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id):
         raise ValueError("Invalid rating action or video ID")
     state = load_settings(paths)
-    if not state or state["backend"] != "custom":
-        raise ValueError("Rating controls require the customised player")
+    if not player_ready(paths, state):
+        raise ValueError("Rating controls require the current customised player. Run Player setup.")
     return subprocess.run([str(paths.binary("custom")), "rating", action, video_id],
                           env=player_env(paths, "custom", state), timeout=65).returncode
 

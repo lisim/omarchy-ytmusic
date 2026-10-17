@@ -21,13 +21,17 @@ BarWidget {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
-      try { root.backend = JSON.parse(text()).backend || "" }
+      try {
+        var settings = JSON.parse(text())
+        root.backend = settings.auth_pending ? "" : (settings.backend || "")
+      }
       catch (error) { root.backend = "" }
     }
     onLoadFailed: root.backend = ""
   }
 
   readonly property var activePlayer: {
+    if (root.backend !== "custom") return null
     var players = root.players
     for (var i = 0; i < players.length; i++) {
       if (players[i].desktopEntry === "ytmusic-tui") return players[i]
@@ -185,7 +189,7 @@ BarWidget {
       spacing: Style.space(10)
 
       Button {
-        text: root.backend ? "Player setup" : "Set up YouTube Music"
+        text: root.backend === "original" ? "Migrate to customised player" : (root.backend ? "Player setup" : "Set up YouTube Music")
         foreground: root.bar.foreground
         onClicked: root.launchAction("configure")
       }
@@ -284,7 +288,7 @@ BarWidget {
             Button {
               objectName: "musicPlayButton"
               iconText: root.activePlayer && root.activePlayer.isPlaying ? "󰏤" : "󰐊"
-              tooltipText: root.activePlayer ? "Play / pause" : (root.backend === "custom" ? "Play a recommendation" : "Open player to choose a song")
+              tooltipText: root.activePlayer ? "Play / pause" : (root.backend === "custom" ? "Play a recommendation" : "Set up customised player")
               foreground: root.bar.foreground
               horizontalPadding: Style.spacing.panelGap
               verticalPadding: Style.spacing.controlPaddingY

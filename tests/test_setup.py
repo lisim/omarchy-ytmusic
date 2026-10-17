@@ -22,19 +22,22 @@ class SetupTests(unittest.TestCase):
         self.paths.bindings.write_text(self.original)
 
     def settings(self, backend="custom"):
-        music.atomic_write(self.paths.settings, json.dumps({"backend": backend, "browser": "later", "auto_refresh": False}))
-        binary = self.paths.binary(backend)
-        binary.parent.mkdir(parents=True)
+        spec = json.loads((music.ROOT / "backends.json").read_text())["custom"]
+        music.atomic_write(self.paths.settings, json.dumps({"backend": backend, "browser": "later", "auto_refresh": False, "commit": spec["commit"]}))
+        binary = self.paths.data / backend / "bin/ytmusic-tui"
+        binary.parent.mkdir(parents=True, exist_ok=True)
         binary.write_text("fake")
+        if backend == "custom":
+            music.atomic_write(binary.parent / "source.json", json.dumps(spec))
 
-    def test_choices_keep_binary_and_custom_config_separate(self):
-        self.assertNotEqual(self.paths.binary("custom"), self.paths.binary("original"))
+    def test_only_fork_can_construct_binary_and_auth_environment(self):
         custom = music.player_env(self.paths, "custom")
-        original = music.player_env(self.paths, "original")
         self.assertEqual(custom["YTMUSIC_TUI_CONFIG_DIR"], str(self.paths.config / "custom-tui"))
-        self.assertNotIn("YTMUSIC_TUI_CONFIG_DIR", original)
         self.assertNotIn("NO_COLOR", custom)
-        self.assertNotIn("NO_COLOR", original)
+        with self.assertRaises(ValueError):
+            self.paths.binary("original")
+        with self.assertRaises(ValueError):
+            music.player_env(self.paths, "original")
 
     def test_desktop_rule_round_trip_preserves_existing_bindings(self):
         with patch.object(music, "run", return_value=subprocess.CompletedProcess([], 0, "")):
@@ -45,6 +48,162 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(first.count(music.BEGIN), 1)
             music.update_desktop(self.paths)
         self.assertEqual(self.paths.bindings.read_text(), self.original)
+
+    def test_legacy_original_cannot_play_rate_or_restore_a_running_window(self):
+        music.atomic_write(self.paths.settings, json.dumps({"backend": "original", "browser": "chrome", "auto_refresh": True}))
+        window = {"address": "0x123", "workspace": {"name": "1", "id": 1}}
+        with patch.object(music.os, "execve") as execute, patch.object(music.subprocess, "run") as request:
+            with self.assertRaises(ValueError):
+                music.play(self.paths)
+            with self.assertRaises(ValueError):
+                music.rating(self.paths, "LIKE", "song")
+            execute.assert_not_called()
+            request.assert_not_called()
+        with patch.object(music, "own_window", return_value=window), patch.object(music, "configure") as setup, \
+             patch.object(music, "run") as dispatch:
+            music.toggle(self.paths)
+            setup.assert_called_once()
+            dispatch.assert_not_called()
+
+    def test_original_source_is_rejected_before_build_or_execution(self):
+        source = {"repository": "https://github.com/WakaTaira/ytmusic-tui.git", "commit": "a" * 40}
+        with patch.object(music, "run") as run:
+            with self.assertRaises(ValueError):
+                music.build_backend(self.paths, "custom", source)
+            source["repository"] = "https://github.com/lisim/ytmusic-tui.git"
+            with self.assertRaises(ValueError):
+                music.build_backend(self.paths, "original", source)
+            run.assert_not_called()
+
+    def test_outdated_or_missing_build_receipt_blocks_play_and_ratings(self):
+        self.settings()
+        receipt = self.paths.binary("custom").parent / "source.json"
+        for content in [None, "{}", "bad json"]:
+            if content is None:
+                receipt.unlink(missing_ok=True)
+            else:
+                receipt.write_text(content)
+            with patch.object(music.os, "execve") as execute, patch.object(music.subprocess, "run") as request:
+                with self.assertRaises(ValueError):
+                    music.play(self.paths)
+                with self.assertRaises(ValueError):
+                    music.rating(self.paths, "get", "song")
+                execute.assert_not_called()
+                request.assert_not_called()
+
+    def test_original_migration_requires_successful_fresh_sign_in(self):
+        upstream = self.root / ".config/ytmusic-tui/browser.json"
+        upstream.parent.mkdir(parents=True)
+        upstream.write_text("old-original-cookie-do-not-import")
+        self.paths.auth().parent.mkdir(parents=True)
+        self.paths.auth().write_text("old-custom-copy")
+        for browser, succeeds in [("later", False), ("chrome", False), ("chrome", True)]:
+            self.settings("original")
+            previous = self.paths.settings.read_bytes()
+            def auth(args, **kwargs):
+                self.assertEqual(args, [self.paths.binary("custom"), "auth", "--from-browser", "chrome"])
+                self.assertEqual(kwargs["env"]["YTMUSIC_TUI_CONFIG_DIR"], str(self.paths.config / "custom-tui"))
+                self.assertNotIn("YTMUSIC_TUI_AUTH_BROWSER", kwargs["env"])
+                if not succeeds:
+                    raise subprocess.CalledProcessError(1, args)
+                music.atomic_write(self.paths.auth(), "fresh-filtered-session")
+            with patch.object(music, "own_window", return_value=None), \
+                 patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+                 patch.object(music, "choose", return_value=music.BROWSERS.index(browser)), \
+                 patch.object(music, "confirm", side_effect=[True, False, False, False]), \
+                 patch.object(music, "build_backend") as build, patch.object(music, "update_desktop") as desktop, \
+                 patch.object(music, "run", side_effect=auth) as calls:
+                if succeeds:
+                    music.setup(self.paths)
+                    self.assertEqual(music.load_settings(self.paths)["backend"], "custom")
+                    self.assertEqual(self.paths.auth().read_text(), "fresh-filtered-session")
+                    desktop.assert_called_once()
+                else:
+                    with self.assertRaises(ValueError):
+                        music.setup(self.paths)
+                    self.assertEqual(self.paths.settings.read_bytes(), previous)
+                    self.assertEqual(self.paths.auth().read_text(), "old-custom-copy")
+                    desktop.assert_not_called()
+                if browser == "later":
+                    build.assert_not_called()
+                    calls.assert_not_called()
+            self.assertEqual(upstream.read_text(), "old-original-cookie-do-not-import")
+
+    def test_auth_override_or_symlink_cannot_reuse_original_credentials(self):
+        self.settings()
+        upstream = self.root / ".config/ytmusic-tui/browser.json"
+        upstream.parent.mkdir(parents=True)
+        upstream.write_text("do-not-read")
+        config = self.paths.auth().parent / "config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text('[auth]\nbrowser_auth_path = ' + json.dumps(str(upstream)) + '\n')
+        with patch.object(music.os, "execve") as execute, patch.object(music.subprocess, "run") as request:
+            with self.assertRaises(ValueError):
+                music.play(self.paths)
+            with self.assertRaises(ValueError):
+                music.rating(self.paths, "get", "song")
+            execute.assert_not_called()
+            request.assert_not_called()
+        config.unlink()
+        self.paths.auth().symlink_to(upstream)
+        with self.assertRaises(ValueError):
+            music.player_env(self.paths, "custom")
+        self.assertEqual(upstream.read_text(), "do-not-read")
+
+    def test_stale_custom_build_also_requires_fresh_sign_in(self):
+        self.settings()
+        receipt = self.paths.binary("custom").parent / "source.json"
+        receipt.write_text('{}')
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", return_value=music.BROWSERS.index("later")), \
+             patch.object(music, "build_backend") as build, patch.object(music, "run") as request:
+            with self.assertRaisesRegex(ValueError, "fresh sign-in"):
+                music.setup(self.paths)
+            build.assert_not_called()
+            request.assert_not_called()
+
+    def test_failed_migration_stays_blocked_after_build_receipt_is_updated(self):
+        self.settings()
+        receipt = self.paths.binary("custom").parent / "source.json"
+        receipt.unlink()
+        self.paths.auth().parent.mkdir(parents=True)
+        self.paths.auth().write_text("old-session")
+        def build(paths, backend, spec):
+            music.atomic_write(receipt, json.dumps(spec))
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", return_value=0), \
+             patch.object(music, "confirm", side_effect=[True, False, False, False]), \
+             patch.object(music, "build_backend", side_effect=build), \
+             patch.object(music, "run", side_effect=subprocess.CalledProcessError(1, ["auth"])):
+            with self.assertRaises(ValueError):
+                music.setup(self.paths)
+        self.assertFalse(music.player_ready(self.paths, music.load_settings(self.paths)))
+        self.assertEqual(self.paths.auth().read_text(), "old-session")
+        with patch.object(music.os, "execve") as execute:
+            with self.assertRaises(ValueError):
+                music.play(self.paths)
+            execute.assert_not_called()
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", return_value=music.BROWSERS.index("later")), \
+             patch.object(music, "build_backend") as retry:
+            with self.assertRaisesRegex(ValueError, "fresh sign-in"):
+                music.setup(self.paths)
+            retry.assert_not_called()
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", return_value=0), \
+             patch.object(music, "confirm", side_effect=[True, False, False, False]), \
+             patch.object(music, "build_backend", side_effect=build), \
+             patch.object(music, "update_desktop"), \
+             patch.object(music, "run", side_effect=lambda *a, **kw: music.atomic_write(self.paths.auth(), "new-session")):
+            music.setup(self.paths)
+        state = music.load_settings(self.paths)
+        self.assertTrue(music.player_ready(self.paths, state))
+        self.assertNotIn("auth_pending", state)
+        self.assertEqual(self.paths.auth().read_text(), "new-session")
 
     def test_failed_desktop_validation_restores_previous_file(self):
         with patch.object(music, "run", return_value=subprocess.CompletedProcess([], 0, "invalid rule")):
@@ -58,22 +217,22 @@ class SetupTests(unittest.TestCase):
             music.update_desktop(self.paths, False)
         self.assertEqual(self.paths.bindings.read_text(), self.original + music.BEGIN)
 
-    def test_new_setup_offers_both_modes_without_changing_original_config(self):
+    def test_new_setup_only_builds_fork_without_changing_original_config(self):
         original_config = self.root / ".config/ytmusic-tui/config.toml"
         original_config.parent.mkdir(parents=True)
         original_config.write_text('[ui]\ntheme = "nord"\n')
-        lock = {mode: {"repository": "https://github.com/lisim/ytmusic-tui.git", "commit": "a" * 40} for mode in ("custom", "original")}
+        lock = {"custom": {"repository": "https://github.com/lisim/ytmusic-tui.git", "commit": "a" * 40}}
         (self.root / "backends.json").write_text(json.dumps(lock))
-        for mode_index, mode in enumerate(("custom", "original")):
-            with patch.object(music, "ROOT", self.root), patch.object(music, "own_window", return_value=None), \
-                 patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
-                 patch.object(music, "choose", side_effect=[mode_index, music.BROWSERS.index("later")]), \
-                 patch.object(music, "confirm", return_value=False), patch.object(music, "build_backend") as build, \
-                 patch.object(music, "update_desktop"):
-                music.setup(self.paths)
-            self.assertEqual(music.load_settings(self.paths)["backend"], mode)
-            self.assertEqual(build.call_args.args[1], mode)
-            self.assertEqual(original_config.read_text(), '[ui]\ntheme = "nord"\n')
+        with patch.object(music, "ROOT", self.root), patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", return_value=music.BROWSERS.index("later")) as choose, \
+             patch.object(music, "confirm", return_value=False), patch.object(music, "build_backend") as build, \
+             patch.object(music, "update_desktop"):
+            music.setup(self.paths)
+        self.assertEqual(choose.call_count, 1)
+        self.assertEqual(music.load_settings(self.paths)["backend"], "custom")
+        self.assertEqual(build.call_args.args[1], "custom")
+        self.assertEqual(original_config.read_text(), '[ui]\ntheme = "nord"\n')
         self.assertEqual(self.paths.settings.stat().st_mode & 0o777, 0o600)
 
     def test_build_uses_exact_pin_and_does_not_rebuild_same_revision(self):
@@ -89,13 +248,16 @@ class SetupTests(unittest.TestCase):
             calls.reset_mock()
             music.build_backend(self.paths, "custom", source)
             calls.assert_not_called()
+            (self.paths.binary("custom").parent / "source.json").write_text("broken receipt")
+            music.build_backend(self.paths, "custom", source)
+            self.assertTrue(any("fetch" in call.args[0] for call in calls.call_args_list))
         self.assertEqual(self.paths.binary("custom").read_text(), "fake compiled executable")
 
     def test_manual_auth_fallback_is_not_overwritten_by_browser_refresh(self):
         (self.root / "backends.json").write_text(json.dumps({"custom":{"commit":"a" * 40}}))
         with patch.object(music, "ROOT", self.root), patch.object(music, "own_window", return_value=None), \
              patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
-             patch.object(music, "choose", side_effect=[0, 0]), \
+             patch.object(music, "choose", return_value=0), \
              patch.object(music, "confirm", side_effect=[True, True, False, True, False]), \
              patch.object(music, "build_backend"), patch.object(music, "update_desktop"), \
              patch.object(music, "run", side_effect=[subprocess.CalledProcessError(1, ["auth"]), subprocess.CompletedProcess([], 0)]):
@@ -115,7 +277,7 @@ class SetupTests(unittest.TestCase):
     def test_declining_cookie_consent_never_reads_browser_or_builds(self):
         with patch.object(music, "own_window", return_value=None), \
              patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
-             patch.object(music, "choose", side_effect=[0, 0]), \
+             patch.object(music, "choose", return_value=0), \
              patch.object(music, "confirm", return_value=False), \
              patch.object(music, "build_backend") as build, patch.object(music, "run") as run:
             with self.assertRaisesRegex(ValueError, "no cookies were read"):
@@ -127,8 +289,7 @@ class SetupTests(unittest.TestCase):
     def test_refresh_requires_saved_opt_in_and_ignores_inherited_environment(self):
         with patch.dict(music.os.environ, {"YTMUSIC_TUI_AUTH_BROWSER": "firefox"}):
             for backend, browser, enabled in [("custom", "chrome", True), ("custom", "chrome", False),
-                                              ("custom", "manual", True), ("custom", "later", True),
-                                              ("original", "chrome", True)]:
+                                              ("custom", "manual", True), ("custom", "later", True)]:
                 state = {"backend": backend, "browser": browser, "auto_refresh": enabled}
                 env = music.player_env(self.paths, backend, state)
                 self.assertEqual(env.get("YTMUSIC_TUI_AUTH_BROWSER"),
@@ -137,7 +298,7 @@ class SetupTests(unittest.TestCase):
 
     def test_play_and_rating_share_the_selected_refresh_browser(self):
         self.settings()
-        state = {"backend": "custom", "browser": "chrome", "auto_refresh": True}
+        state = dict(music.load_settings(self.paths), browser="chrome", auto_refresh=True)
         music.atomic_write(self.paths.settings, json.dumps(state))
         with patch.object(music.os, "execve") as execute:
             music.play(self.paths)
@@ -147,6 +308,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(request.call_args.kwargs["env"]["YTMUSIC_TUI_AUTH_BROWSER"], "chrome")
 
     def test_hide_restore_and_offscreen_focus_never_show_overlay(self):
+        self.settings()
         for name, wid, expected in [("1", 1, music.PARKING), (music.PARKING, -98, 'workspace="3"'), ("4", 4, "focus")]:
             window = {"address": "0x123", "workspace": {"name": name, "id": wid}}
             def query(command):
@@ -171,6 +333,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(launch.call_args.args[0][-2:], ["play", "--autoplay"])
 
     def test_start_play_does_not_hide_a_window_that_is_still_starting(self):
+        self.settings()
         window = {"address": "0x123", "workspace": {"name": "1", "id": 1}}
         with patch.object(music, "own_window", return_value=window), patch.object(music, "run") as calls:
             music.toggle(self.paths, autoplay=True)
@@ -178,19 +341,17 @@ class SetupTests(unittest.TestCase):
         self.assertIn("focus", str(calls.call_args.args[0]))
 
     def test_autoplay_flag_only_reaches_customised_player(self):
-        for mode in ("custom", "original"):
-            self.settings(mode)
-            with patch.object(music.os, "execve") as execute:
-                music.play(self.paths, autoplay=True)
-            expected = [str(self.paths.binary(mode)), *(["--autoplay"] if mode == "custom" else [])]
-            self.assertEqual(execute.call_args.args[1], expected)
+        self.settings()
+        with patch.object(music.os, "execve") as execute:
+            music.play(self.paths, autoplay=True)
+        self.assertEqual(execute.call_args.args[1], [str(self.paths.binary("custom")), "--autoplay"])
 
     def test_uninstall_keeps_upstream_and_retains_custom_auth_by_default(self):
         self.settings()
-        original = self.paths.auth("original")
+        original = self.root / ".config/ytmusic-tui/browser.json"
         original.parent.mkdir(parents=True, exist_ok=True)
         original.write_text("dummy-original-session")
-        custom = self.paths.auth("custom")
+        custom = self.paths.auth()
         custom.parent.mkdir(parents=True, exist_ok=True)
         custom.write_text("dummy-custom-session")
         with patch.object(music, "own_window", return_value=None), patch.object(music, "confirm", return_value=True), patch.object(music, "update_desktop"):
@@ -201,7 +362,7 @@ class SetupTests(unittest.TestCase):
 
     def test_purge_removes_custom_auth_but_not_original(self):
         self.settings()
-        original = self.paths.auth("original")
+        original = self.root / ".config/ytmusic-tui/browser.json"
         original.parent.mkdir(parents=True, exist_ok=True)
         original.write_text("dummy-original")
         with patch.object(music, "own_window", return_value=None), patch.object(music, "confirm", return_value=True), patch.object(music, "update_desktop"):
@@ -284,7 +445,7 @@ class SetupTests(unittest.TestCase):
         result = subprocess.run([music.sys.executable, music.__file__, "rating", "--", "LIKE", "-video"],
                                 env=dict(music.os.environ, XDG_CONFIG_HOME=str(self.root)), capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("require the customised player", result.stderr)
+        self.assertIn("require the current customised player", result.stderr)
 
 
 if __name__ == "__main__":

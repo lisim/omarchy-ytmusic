@@ -20,6 +20,7 @@ jobs:
           assert manifest['id'] == 'lisim.ytmusic'
           assert all(pathlib.Path(p).is_file() for p in manifest['entryPoints'].values())
           pins = json.loads(pathlib.Path('backends.json').read_text())
-          assert set(pins) == {'custom', 'original'}
+          assert set(pins) == {'custom'}
+          assert pins['custom']['repository'] == 'https://github.com/lisim/ytmusic-tui.git'
           assert all(re.fullmatch('[0-9a-f]{40}', p['commit']) for p in pins.values())
           PYCODE

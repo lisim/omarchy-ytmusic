@@ -1,10 +1,6 @@
 {
   "custom": {
     "repository": "https://github.com/lisim/ytmusic-tui.git",
-    "commit": "54fddaf56f206d4b3c3a5c80d69c9cecac631a6f"
-  },
-  "original": {
-    "repository": "https://github.com/WakaTaira/ytmusic-tui.git",
-    "commit": "09114f3076422756811c62889b605429df704813"
+    "commit": "3b2322c63dc593ce70e30cda4745406e2f1f1910"
   }
 }

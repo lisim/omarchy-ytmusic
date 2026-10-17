@@ -143,6 +143,7 @@ ShellRoot {
         checks.tryCompare(ratings, "errorText", "Test network failure", 2000)
         check(ratings.ratingStatus === "DISLIKE", "failed request changed the selected rating")
         widget.item.backend = "original"
+        check(widget.item.activePlayer === null, "legacy Original player is still controllable")
         check(!widget.item.canSetVolume && widget.item.upNext.length === 0, "original mode exposes unsupported controls")
         check(!ratings.supported, "original mode exposes rating commands")
         console.log("PASS: actual widget selects music, changes only its volume, clamps limits and reads queue")
