@@ -88,7 +88,7 @@ Column {
           width: Style.space(18)
           height: width
           rotation: thumb.modelData === "DISLIKE" ? 180 : 0
-          readonly property color ink: thumb.selected ? Style.selectedStateColor(root.foreground, Color.accent) : root.foreground
+          readonly property color ink: thumb.selected ? "#ff0033" : root.foreground
           source: "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="' + ink + '" d="M2 10h4v12H2zM8 10l5-8h2v6h5a2 2 0 0 1 2 2l-2 10a2 2 0 0 1-2 2H8z"/></svg>')
           sourceSize.width: width
           sourceSize.height: height

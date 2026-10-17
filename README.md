@@ -76,7 +76,7 @@ A hidden player stays running in a parked workspace. Restoring moves the floatin
 
 In Customised mode, **F1** shows/hides keyboard help, **1** opens Home, **2** Search, **3** Library, **5** Queue and **8** Lyrics. **f** toggles Like and **Shift+F** toggles Dislike for the current song. Tab switches cards/panes; arrows select, Enter plays/opens. After submitting a search, Esc returns to result navigation. Mouse selection inside the TUI is not supported.
 
-The mini player's thumbs read the signed-in account's saved rating when opened or when the song changes. Click a selected thumb again to remove that rating. Requests use the selected custom player's private configuration and the exact song shown when clicked; failures are displayed without pretending the rating changed. If YouTube does not report a rating, the panel says so. No ratings are sent merely by opening the panel.
+The mini player's thumbs read the signed-in account's saved rating when opened or when the song changes. The recorded thumb turns YouTube red; click it again to remove that rating. Requests use the selected custom player's private configuration and the exact song shown when clicked; failures are displayed without pretending the rating changed. If YouTube does not report a rating, the panel says so. No ratings are sent merely by opening the panel.
 
 ## Setup, updates and removal
 

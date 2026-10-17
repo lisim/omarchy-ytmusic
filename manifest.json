@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lisim.ytmusic",
   "name": "YouTube Music TUI (lisim)",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "lisim",
   "license": "MIT",
   "description": "Omarchy bar integration for WakaTaira's ytmusic-tui, with original or customised player setup.",
