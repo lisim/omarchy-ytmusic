@@ -26,6 +26,8 @@ omarchy pkg add rustup base-devel mpv yt-dlp
 rustup toolchain install stable
 ```
 
+On a fresh Omarchy installation, complete its normal `omarchy update` first so package databases and the system are ready for additional packages.
+
 The plugin install command only clones/enables files. Source building and account setup happen after you explicitly open first-run setup.
 
 ## Choose your player
@@ -89,7 +91,9 @@ First-run setup asks before reading a browser’s YouTube session. Optional auto
 
 ## Validation and limits
 
-The setup tests use temporary config/data roots and fake commands; they cover both choices, exact source pins, build-failure preservation, desktop rollback, hide/show and uninstall ownership. Coexistence tests verify that normal uninstall and purge preserve other players' files in the old shared directories, with both default and custom XDG locations. The QML test loads the actual widget with fake players, checks volume isolation, vertical-slider direction, queue scrolling and Original-mode capability gating. Full clean-OS testing is still recommended before a marketplace listing.
+The setup tests use temporary config/data roots and fake commands; they cover both choices, exact source pins, build-failure preservation, desktop rollback, hide/show and uninstall ownership. Coexistence tests verify that normal uninstall and purge preserve other players' files in the old shared directories, with both default and custom XDG locations. The QML test loads the actual widget with fake players, checks SVG loading, icon-only idle display, volume isolation, vertical-slider direction, queue scrolling and Original-mode capability gating.
+
+Clean-install checks passed in an Omarchy 4.0.4 KVM guest after the normal Omarchy update and Rust prerequisite installation: both setup choices built their pinned players, the customised player opened/floated/hid/restored, and actual uninstall/purge preserved foreign test files and restored desktop bindings. All 16 setup tests and QML checks also passed in the guest. Google sign-in and audible playback were not repeated in that VM; customised-player playback was checked separately on the maintainer's laptop.
 
 ```sh
 python3 -m unittest discover -s tests -p test_setup.py -v
