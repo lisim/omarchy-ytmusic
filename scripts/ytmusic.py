@@ -71,12 +71,15 @@ def load_settings(paths):
     return state
 
 
-def player_env(paths, backend):
+def player_env(paths, backend, state=None):
     env = dict(os.environ)
     env.pop("NO_COLOR", None)
     env.pop("YTMUSIC_TUI_CONFIG_DIR", None)
+    env.pop("YTMUSIC_TUI_AUTH_BROWSER", None)
     if backend == "custom":
         env["YTMUSIC_TUI_CONFIG_DIR"] = str(paths.config / "custom-tui")
+        if state and state.get("auto_refresh") and state["browser"] not in ("manual", "later"):
+            env["YTMUSIC_TUI_AUTH_BROWSER"] = state["browser"]
     return env
 
 
@@ -251,9 +254,15 @@ def setup(paths):
     backend = ("custom", "original")[choose("Choose your player", [
         "Customised (recommended): helper, Home cards/mixes, terminal colours, volume and Up Next",
         "Original upstream: basic controls; no custom helper, panel volume or Up Next"])]
-    print("\nBrowser sign-in reads that browser's YouTube session locally and sends it only to YouTube.")
+    print("\nAUTHENTICATION: both players use YouTube session cookies, not Google OAuth.")
+    print("Browser selection reads its local cookie store and copies YouTube cookies to browser.json.")
+    print("Manual sign-in avoids reading the browser store, but still saves cookies you paste.")
+    print("The local file is plaintext: treat it like a password. The player sends auth to YouTube, not the plugin author.")
+    print("Choose 'later' to skip importing cookies. Existing saved sign-in is kept.")
     browser = BROWSERS[choose("Which browser is signed into YouTube Music?", list(BROWSERS), 0)]
-    refresh = browser not in ("manual", "later") and backend == "custom" and confirm("Refresh YouTube sign-in from this browser on future launches?", True)
+    if browser != "later" and not confirm("Allow copying YouTube session cookies for this player?", False):
+        raise ValueError("Sign-in cancelled; no cookies were read. Run setup and choose 'later' to skip sign-in.")
+    refresh = browser not in ("manual", "later") and backend == "custom" and confirm("Allow re-reading this browser's YouTube cookies when the session expires (including while playing or using ratings)?", False)
     shortcut = confirm("Use Super+Shift+M for show/hide? This replaces its current Music shortcut.")
     specs = json.loads((ROOT / "backends.json").read_text())
     paths.config.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -287,16 +296,21 @@ def play(paths, autoplay=False):
         raise ValueError("Run setup first.")
     backend = state["backend"]
     binary = paths.binary(backend)
-    env = player_env(paths, backend)
-    if state.get("auto_refresh") and state["browser"] not in ("manual", "later"):
-        try:
-            run([binary, "auth", "--from-browser", state["browser"]], env=env, timeout=30)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            print("Browser refresh failed; trying the saved session.")
+    env = player_env(paths, backend, state)
     args = [str(binary)]
     if autoplay and backend == "custom":
         args.append("--autoplay")
     os.execve(binary, args, env)
+
+
+def rating(paths, action, video_id):
+    if action not in ("get", "LIKE", "DISLIKE", "INDIFFERENT") or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id):
+        raise ValueError("Invalid rating action or video ID")
+    state = load_settings(paths)
+    if not state or state["backend"] != "custom":
+        raise ValueError("Rating controls require the customised player")
+    return subprocess.run([str(paths.binary("custom")), "rating", action, video_id],
+                          env=player_env(paths, "custom", state), timeout=65).returncode
 
 
 def uninstall(paths, purge=False):
@@ -320,10 +334,13 @@ def uninstall(paths, purge=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("toggle", "start-play", "configure", "setup", "play", "uninstall", "running-message"))
+    parser.add_argument("action", choices=("toggle", "start-play", "configure", "setup", "play", "rating", "uninstall", "running-message"))
+    parser.add_argument("rating_args", nargs="*")
     parser.add_argument("--autoplay", action="store_true", help="Start a recommendation with the customised player")
     parser.add_argument("--purge", action="store_true", help="Also delete custom settings/sign-in during uninstall")
     args = parser.parse_args()
+    if (args.action == "rating" and len(args.rating_args) != 2) or (args.action != "rating" and args.rating_args):
+        parser.error("rating takes an action and video ID; other actions take no positional arguments")
     paths = Paths()
     os.umask(0o077)
     try:
@@ -332,6 +349,7 @@ def main():
         elif args.action == "configure": configure()
         elif args.action == "setup": setup(paths)
         elif args.action == "play": play(paths, autoplay=args.autoplay)
+        elif args.action == "rating": return rating(paths, *args.rating_args)
         elif args.action == "uninstall": uninstall(paths, args.purge)
         else:
             print("A YouTube Music TUI is already running outside this plugin. Close it before launching another.")

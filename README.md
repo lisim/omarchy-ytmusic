@@ -2,6 +2,8 @@
 
 Omarchy bar integration for [WakaTaira's ytmusic-tui](https://github.com/WakaTaira/ytmusic-tui), with a choice of the original player or lisim's customised fork. The floating terminal player can be hidden while music keeps playing.
 
+> **Read before installing: both player choices use YouTube session cookies, not Google OAuth.** Browser sign-in reads the selected browser's local cookie store and saves a plaintext session copy. Manual sign-in also uses cookies. Cookie access and automatic renewal are explained during setup and require your choice. See [Authentication and privacy](#authentication-and-privacy).
+
 ![Home cards — sample content](preview.png)
 
 ## Install
@@ -15,7 +17,7 @@ omarchy plugin add https://github.com/lisim/omarchy-ytmusic.git --enable
 Click the new bar item to open first-run setup. It will:
 
 1. Offer **Customised** (recommended) or **Original upstream**.
-2. Ask which browser is signed into YouTube Music (or offer manual sign-in / setup later).
+2. Explain cookie access and ask for consent, offering browser extraction, manual cookie-header paste or setup later. Automatic renewal is a separate opt-in, defaulting to No.
 3. Build the selected player from the pinned source revision in `backends.json`.
 4. Add the floating-window rule and optionally bind **Super+Shift+M**.
 
@@ -38,9 +40,22 @@ The plugin install command only clones/enables files. Source building and accoun
 | Search-style Home cards, terminal palette, F1 helper | Yes | Upstream appearance/keys |
 | Later Home sections / personalised mix fixes | Yes | Upstream behaviour |
 | Panel volume slider and Up Next | Yes | Hidden; the inspected upstream volume setter does nothing |
+| Mini-player Like / Dislike buttons | Yes, with saved rating and clear-on-second-click | Hidden |
 | Configuration | Separate plugin-owned directory | Existing upstream configuration, preserved |
 
 The customised player is a separate [fork of WakaTaira’s TUI](https://github.com/lisim/ytmusic-tui). Both choices are source-built and pinned. Original uses upstream’s sign-in flow; browser extraction may require its manual fallback. Selecting Original does not install our patches or overwrite its existing theme/keymap.
+
+## Authentication and privacy
+
+**Neither player offers Google OAuth sign-in.** Both reuse a signed-in YouTube browser session. These cookies are credentials, not narrowly scoped music-only tokens; someone with a working copy can act as that session. Only authenticate if you trust the selected player with it.
+
+- **Browser extraction:** after your explicit consent, the selected player's `rookie` dependency reads/decrypts the selected browser's cookie store, requesting YouTube cookies. Our customised fork additionally filters exact YouTube domains and allowed cookie names. It does not read your saved Google password. Original runs its pinned upstream implementation; our renewal and hardening changes do not apply to it.
+- **Local storage:** Customised saves plaintext cookies/headers to `${XDG_CONFIG_HOME:-$HOME/.config}/lisim-ytmusic/custom-tui/browser.json` by default, using owner-only permissions (`0600`) and atomic writes. Original uses `~/.config/ytmusic-tui/browser.json`. Explicit player auth-path overrides take precedence. File permissions are not encryption: never share auth files, raw headers or backups containing them.
+- **Network use:** the player sends session authentication to YouTube Music. There is no plugin-author login server or cookie-upload/telemetry service. This remains an unofficial integration that Google may change or invalidate.
+- **Your choices:** manual header-paste avoids direct browser-store access but still copies and uses cookies. Choose **later** to skip importing cookies; existing saved authentication is retained. Without a saved session, account features such as your library, personalised mixes and ratings will not work. Declining the consent prompt cancels setup before any browser access.
+- **Renewal and removal:** Customised can optionally re-read the selected browser when the session expires, including in the running TUI and mini-player rating actions. It validates the replacement, saves it atomically and retries once; failure preserves existing auth. New setups default to **No**. To turn it off, close the player, open **Player setup**, and decline automatic renewal. To stop using saved cookies, quit the player, disable renewal and remove the selected auth file. Uninstall with `--purge` removes plugin-owned custom sign-in; normal uninstall retains it, and Original's auth is always retained. Deleting a file does not revoke copies elsewhere.
+
+Existing users who enabled automatic refresh now also get renewal during use, rather than only at launch. Restart the TUI after updating its build. Chrome must still have a valid accessible YouTube session; this does not bypass sign-in or guarantee sessions never expire.
 
 ## Controls
 
@@ -59,7 +74,9 @@ The Up Next list scrolls independently. The slider is on the right: bottom 0%, t
 
 A hidden player stays running in a parked workspace. Restoring moves the floating window to the current normal workspace; it never opens a full-workspace overlay. Closing the terminal or pressing **Q** stops playback. If a TUI is already running outside this plugin, close that instance before launching a second one.
 
-In Customised mode, **F1** shows/hides keyboard help, **1** opens Home, **2** Search, **3** Library, **5** Queue and **8** Lyrics. Tab switches cards/panes; arrows select, Enter plays/opens. After submitting a search, Esc returns to result navigation. Mouse selection inside the TUI is not supported.
+In Customised mode, **F1** shows/hides keyboard help, **1** opens Home, **2** Search, **3** Library, **5** Queue and **8** Lyrics. **f** toggles Like and **Shift+F** toggles Dislike for the current song. Tab switches cards/panes; arrows select, Enter plays/opens. After submitting a search, Esc returns to result navigation. Mouse selection inside the TUI is not supported.
+
+The mini player's thumbs read the signed-in account's saved rating when opened or when the song changes. Click a selected thumb again to remove that rating. Requests use the selected custom player's private configuration and the exact song shown when clicked; failures are displayed without pretending the rating changed. If YouTube does not report a rating, the panel says so. No ratings are sent merely by opening the panel.
 
 ## Setup, updates and removal
 
@@ -88,7 +105,7 @@ This asks for confirmation, removes the owned builds/cache and managed desktop-r
 - `${XDG_CACHE_HOME:-~/.cache}/lisim-ytmusic/`: compiler cache; temporary source checkouts are removed after each build.
 - `~/.config/hypr/bindings.lua` (under XDG_CONFIG_HOME when set): one marked block for floating-window behaviour and the optional shortcut. Failed validation restores the previous file.
 
-First-run setup asks before reading a browser’s YouTube session. Optional automatic refresh reads that selected browser on future player launches; choose manual/later to avoid it. Auth is sent to YouTube by the selected player. No account data is sent to the plugin author, written into the source checkout or included in this repository.
+Authentication files are runtime data outside the source checkout. See [Authentication and privacy](#authentication-and-privacy) before choosing a sign-in method.
 
 ## Validation and limits
 

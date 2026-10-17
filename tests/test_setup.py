@@ -96,7 +96,7 @@ class SetupTests(unittest.TestCase):
         with patch.object(music, "ROOT", self.root), patch.object(music, "own_window", return_value=None), \
              patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
              patch.object(music, "choose", side_effect=[0, 0]), \
-             patch.object(music, "confirm", side_effect=[True, False, True, False]), \
+             patch.object(music, "confirm", side_effect=[True, True, False, True, False]), \
              patch.object(music, "build_backend"), patch.object(music, "update_desktop"), \
              patch.object(music, "run", side_effect=[subprocess.CalledProcessError(1, ["auth"]), subprocess.CompletedProcess([], 0)]):
             music.setup(self.paths)
@@ -111,6 +111,40 @@ class SetupTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 music.build_backend(self.paths, "custom", source)
         self.assertEqual(self.paths.binary("custom").read_text(), "fake")
+
+    def test_declining_cookie_consent_never_reads_browser_or_builds(self):
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", side_effect=[0, 0]), \
+             patch.object(music, "confirm", return_value=False), \
+             patch.object(music, "build_backend") as build, patch.object(music, "run") as run:
+            with self.assertRaisesRegex(ValueError, "no cookies were read"):
+                music.setup(self.paths)
+        build.assert_not_called()
+        run.assert_not_called()
+        self.assertFalse(self.paths.settings.exists())
+
+    def test_refresh_requires_saved_opt_in_and_ignores_inherited_environment(self):
+        with patch.dict(music.os.environ, {"YTMUSIC_TUI_AUTH_BROWSER": "firefox"}):
+            for backend, browser, enabled in [("custom", "chrome", True), ("custom", "chrome", False),
+                                              ("custom", "manual", True), ("custom", "later", True),
+                                              ("original", "chrome", True)]:
+                state = {"backend": backend, "browser": browser, "auto_refresh": enabled}
+                env = music.player_env(self.paths, backend, state)
+                self.assertEqual(env.get("YTMUSIC_TUI_AUTH_BROWSER"),
+                                 "chrome" if backend == "custom" and browser == "chrome" and enabled else None)
+            self.assertNotIn("YTMUSIC_TUI_AUTH_BROWSER", music.player_env(self.paths, "custom"))
+
+    def test_play_and_rating_share_the_selected_refresh_browser(self):
+        self.settings()
+        state = {"backend": "custom", "browser": "chrome", "auto_refresh": True}
+        music.atomic_write(self.paths.settings, json.dumps(state))
+        with patch.object(music.os, "execve") as execute:
+            music.play(self.paths)
+        with patch.object(music.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as request:
+            music.rating(self.paths, "get", "test-song")
+        self.assertEqual(execute.call_args.args[2]["YTMUSIC_TUI_AUTH_BROWSER"], "chrome")
+        self.assertEqual(request.call_args.kwargs["env"]["YTMUSIC_TUI_AUTH_BROWSER"], "chrome")
 
     def test_hide_restore_and_offscreen_focus_never_show_overlay(self):
         for name, wid, expected in [("1", 1, music.PARKING), (music.PARKING, -98, 'workspace="3"'), ("4", 4, "focus")]:
@@ -230,6 +264,27 @@ class SetupTests(unittest.TestCase):
         music.atomic_write(self.paths.settings, json.dumps({"backend":"custom", "browser":"chrome", "auto_refresh":"yes"}))
         with self.assertRaises(ValueError):
             music.load_settings(self.paths)
+
+    def test_ratings_use_selected_custom_account_and_exact_track(self):
+        self.settings()
+        with patch.object(music.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as execute:
+            self.assertEqual(music.rating(self.paths, "DISLIKE", "video_123-45"), 0)
+        self.assertEqual(execute.call_args.args[0], [str(self.paths.binary("custom")), "rating", "DISLIKE", "video_123-45"])
+        self.assertEqual(execute.call_args.kwargs["env"]["YTMUSIC_TUI_CONFIG_DIR"], str(self.paths.config / "custom-tui"))
+
+    def test_ratings_reject_original_mode_and_invalid_input_before_execution(self):
+        self.settings("original")
+        with patch.object(music.subprocess, "run") as execute:
+            for action, video in [("LIKE", "video"), ("DELETE", "video"), ("LIKE", "../file")]:
+                with self.assertRaises(ValueError):
+                    music.rating(self.paths, action, video)
+            execute.assert_not_called()
+
+    def test_rating_cli_accepts_a_video_id_starting_with_a_dash(self):
+        result = subprocess.run([music.sys.executable, music.__file__, "rating", "--", "LIKE", "-video"],
+                                env=dict(music.os.environ, XDG_CONFIG_HOME=str(self.root)), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("require the customised player", result.stderr)
 
 
 if __name__ == "__main__":

@@ -36,6 +36,15 @@ BarWidget {
   }
   readonly property bool canSetVolume: backend === "custom" && !!activePlayer && activePlayer.canControl && activePlayer.volumeSupported && activePlayer.metadata["ytmusic:upNext"] !== undefined
   readonly property real playerVolume: canSetVolume ? activePlayer.volume : 0
+  readonly property string currentVideoId: {
+    var plain = activePlayer ? String(activePlayer.metadata["ytmusic:videoId"] || "") : ""
+    if (/^[A-Za-z0-9_-]{1,128}$/.test(plain)) return plain
+    var track = activePlayer ? String(activePlayer.metadata["mpris:trackid"] || "") : ""
+    var match = track.match(/\/dev\/ytmusic_tui\/track\/([A-Za-z0-9_]+)/)
+    if (!match) return ""
+    var id = match[1].replace(/_([0-9a-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    return /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : ""
+  }
   readonly property var upNext: {
     if (backend !== "custom" || !activePlayer) return []
     try {
@@ -294,6 +303,15 @@ BarWidget {
               opacity: enabled ? 1.0 : 0.4
               onClicked: if (root.activePlayer) root.activePlayer.next()
             }
+          }
+
+          RatingControls {
+            width: parent.width
+            supported: root.backend === "custom"
+            active: root.popupOpen
+            videoId: root.currentVideoId
+            foreground: root.bar.foreground
+            commandPrefix: ["python3", root.scriptPath, "rating", "--"]
           }
         }
 
