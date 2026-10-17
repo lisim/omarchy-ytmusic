@@ -128,6 +128,29 @@ class SetupTests(unittest.TestCase):
             music.toggle(self.paths)
         setup.assert_called_once()
 
+    def test_start_play_launches_with_autoplay_request(self):
+        self.settings()
+        with patch.object(music, "own_window", return_value=None), \
+             patch.object(music.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)), \
+             patch.object(music, "launch_terminal") as launch:
+            music.toggle(self.paths, autoplay=True)
+        self.assertEqual(launch.call_args.args[0][-2:], ["play", "--autoplay"])
+
+    def test_start_play_does_not_hide_a_window_that_is_still_starting(self):
+        window = {"address": "0x123", "workspace": {"name": "1", "id": 1}}
+        with patch.object(music, "own_window", return_value=window), patch.object(music, "run") as calls:
+            music.toggle(self.paths, autoplay=True)
+        self.assertEqual(len(calls.call_args_list), 1)
+        self.assertIn("focus", str(calls.call_args.args[0]))
+
+    def test_autoplay_flag_only_reaches_customised_player(self):
+        for mode in ("custom", "original"):
+            self.settings(mode)
+            with patch.object(music.os, "execve") as execute:
+                music.play(self.paths, autoplay=True)
+            expected = [str(self.paths.binary(mode)), *(["--autoplay"] if mode == "custom" else [])]
+            self.assertEqual(execute.call_args.args[1], expected)
+
     def test_uninstall_keeps_upstream_and_retains_custom_auth_by_default(self):
         self.settings()
         original = self.paths.auth("original")

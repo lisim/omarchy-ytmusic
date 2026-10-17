@@ -75,6 +75,7 @@ ShellRoot {
         check(barTitle.visible, "playing title is hidden")
         widget.item.players = []
         check(!barTitle.visible && icon.visible, "idle bar should show only the icon")
+        check(checks.findChild(widget.item, "musicPlayButton").enabled, "play must be available before the player starts")
         widget.item.players = [browser, music]
         widget.item.togglePlayback()
         check(music.toggles === 1 && music.isPlaying, "playback toggle did not reach music")

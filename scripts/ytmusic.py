@@ -98,7 +98,7 @@ def launch_terminal(command, app_id):
     raise ValueError("The player/setup terminal did not appear within 5 seconds.")
 
 
-def toggle(paths):
+def toggle(paths, autoplay=False):
     if paths.runtime is None:
         raise ValueError("Open this from your Omarchy desktop session.")
     with (paths.runtime / "lisim-ytmusic-launch.lock").open("w") as lock:
@@ -117,7 +117,7 @@ def toggle(paths):
                 if not isinstance(target, int) or target <= 0:
                     raise ValueError("Select a normal workspace first.")
                 run(["hyprctl", "dispatch", f'hl.dsp.window.move({{window={selector}, workspace="{target}", follow=false}})'], stdout=subprocess.DEVNULL)
-            elif any(m["activeWorkspace"]["id"] == window["workspace"]["id"] for m in hypr_json("monitors")):
+            elif not autoplay and any(m["activeWorkspace"]["id"] == window["workspace"]["id"] for m in hypr_json("monitors")):
                 run(["hyprctl", "dispatch", f'hl.dsp.window.move({{window={selector}, workspace="{PARKING}", follow=false}})'], stdout=subprocess.DEVNULL)
                 return
             run(["hyprctl", "dispatch", f'hl.dsp.focus({{window={selector}}})'], stdout=subprocess.DEVNULL)
@@ -133,7 +133,7 @@ def toggle(paths):
         if bus.returncode == 0:
             launch_terminal([sys.executable, __file__, "running-message"], APP_ID + "-notice")
             return
-        launch_terminal([sys.executable, __file__, "play"], APP_ID)
+        launch_terminal([sys.executable, __file__, "play", *(["--autoplay"] if autoplay else [])], APP_ID)
 
 
 def configure():
@@ -281,7 +281,7 @@ def setup(paths):
         toggle(paths)
 
 
-def play(paths):
+def play(paths, autoplay=False):
     state = load_settings(paths)
     if not state:
         raise ValueError("Run setup first.")
@@ -293,7 +293,10 @@ def play(paths):
             run([binary, "auth", "--from-browser", state["browser"]], env=env, timeout=30)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             print("Browser refresh failed; trying the saved session.")
-    os.execve(binary, [str(binary)], env)
+    args = [str(binary)]
+    if autoplay and backend == "custom":
+        args.append("--autoplay")
+    os.execve(binary, args, env)
 
 
 def uninstall(paths, purge=False):
@@ -317,16 +320,18 @@ def uninstall(paths, purge=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("toggle", "configure", "setup", "play", "uninstall", "running-message"))
+    parser.add_argument("action", choices=("toggle", "start-play", "configure", "setup", "play", "uninstall", "running-message"))
+    parser.add_argument("--autoplay", action="store_true", help="Start a recommendation with the customised player")
     parser.add_argument("--purge", action="store_true", help="Also delete custom settings/sign-in during uninstall")
     args = parser.parse_args()
     paths = Paths()
     os.umask(0o077)
     try:
         if args.action == "toggle": toggle(paths)
+        elif args.action == "start-play": toggle(paths, autoplay=True)
         elif args.action == "configure": configure()
         elif args.action == "setup": setup(paths)
-        elif args.action == "play": play(paths)
+        elif args.action == "play": play(paths, autoplay=args.autoplay)
         elif args.action == "uninstall": uninstall(paths, args.purge)
         else:
             print("A YouTube Music TUI is already running outside this plugin. Close it before launching another.")

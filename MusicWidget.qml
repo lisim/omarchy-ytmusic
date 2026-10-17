@@ -51,7 +51,7 @@ BarWidget {
   function adjustPlayerVolume(delta) { setPlayerVolume(playerVolume + delta) }
 
   function togglePlayback() {
-    if (!activePlayer) return
+    if (!activePlayer) { launchAction("start-play"); return }
     if (activePlayer.canTogglePlaying) activePlayer.togglePlaying()
     else if (activePlayer.isPlaying && activePlayer.canPause) activePlayer.pause()
     else if (activePlayer.canPlay) activePlayer.play()
@@ -273,12 +273,14 @@ BarWidget {
             }
 
             Button {
+              objectName: "musicPlayButton"
               iconText: root.activePlayer && root.activePlayer.isPlaying ? "󰏤" : "󰐊"
+              tooltipText: root.activePlayer ? "Play / pause" : (root.backend === "custom" ? "Play a recommendation" : "Open player to choose a song")
               foreground: root.bar.foreground
               horizontalPadding: Style.spacing.panelGap
               verticalPadding: Style.spacing.controlPaddingY
               iconSize: Style.font.iconLarge
-              enabled: root.activePlayer && (root.activePlayer.canTogglePlaying || root.activePlayer.canPlay || root.activePlayer.canPause)
+              enabled: !root.activePlayer || root.activePlayer.canTogglePlaying || root.activePlayer.canPlay || root.activePlayer.canPause
               opacity: enabled ? 1.0 : 0.4
               onClicked: root.togglePlayback()
             }
