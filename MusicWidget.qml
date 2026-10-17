@@ -16,7 +16,7 @@ BarWidget {
 
   FileView {
     id: preferences
-    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omarchy-ytmusic/settings.json"
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/lisim-ytmusic/settings.json"
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
@@ -59,7 +59,7 @@ BarWidget {
 
   readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle || activePlayer.trackArtist)
   readonly property string playIcon: activePlayer && activePlayer.isPlaying ? "󰏤" : "󰗃"
-  readonly property string title: activePlayer ? (activePlayer.trackTitle || "YouTube Music") : "YouTube Music"
+  readonly property string title: activePlayer ? (activePlayer.trackTitle || "YouTube Music TUI (lisim)") : "YouTube Music TUI (lisim)"
   readonly property string artist: activePlayer ? (activePlayer.trackArtist || "") : ""
 
   property bool popupOpen: false

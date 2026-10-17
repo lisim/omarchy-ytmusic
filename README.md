@@ -1,6 +1,6 @@
-# YouTube Music for Omarchy
+# YouTube Music TUI (lisim)
 
-YouTube Music in your Omarchy bar, with a floating terminal player you can hide while music keeps playing.
+Omarchy bar integration for [WakaTaira's ytmusic-tui](https://github.com/WakaTaira/ytmusic-tui), with a choice of the original player or lisim's customised fork. The floating terminal player can be hidden while music keeps playing.
 
 ![Home cards — sample content](preview.png)
 
@@ -66,6 +66,8 @@ omarchy plugin update lisim.ytmusic
 
 Then open Player setup to build the backend revision pinned by that plugin update. An existing matching build is reused; a failed build leaves the previous binary in place.
 
+**Updating from 1.0.0:** version 1.0.1 moves this plugin's storage to `lisim-ytmusic` directories. Close the player, then click the bar to run setup again and rebuild/sign in. The old `omarchy-ytmusic` directories are left untouched because other players also use them; they are not automatically imported, moved or removed. Do not run the old 1.0.0 uninstaller or delete those shared directories as a cleanup step. Original upstream TUI settings remain in their existing location.
+
 To uninstall, close the player and run:
 
 ```sh
@@ -76,16 +78,16 @@ This asks for confirmation, removes the owned builds/cache and managed desktop-r
 
 ## What changes on disk
 
-- `${XDG_CONFIG_HOME:-~/.config}/omarchy-ytmusic/`: setup preferences, custom-player config/sign-in and the initial desktop-bindings backup.
-- `${XDG_DATA_HOME:-~/.local/share}/omarchy-ytmusic/`: separately owned Customised/Original player builds and source receipts.
-- `${XDG_CACHE_HOME:-~/.cache}/omarchy-ytmusic/`: compiler cache; temporary source checkouts are removed after each build.
+- `${XDG_CONFIG_HOME:-~/.config}/lisim-ytmusic/`: setup preferences, custom-player config/sign-in and the initial desktop-bindings backup.
+- `${XDG_DATA_HOME:-~/.local/share}/lisim-ytmusic/`: separately owned Customised/Original player builds and source receipts.
+- `${XDG_CACHE_HOME:-~/.cache}/lisim-ytmusic/`: compiler cache; temporary source checkouts are removed after each build.
 - `~/.config/hypr/bindings.lua` (under XDG_CONFIG_HOME when set): one marked block for floating-window behaviour and the optional shortcut. Failed validation restores the previous file.
 
 First-run setup asks before reading a browser’s YouTube session. Optional automatic refresh reads that selected browser on future player launches; choose manual/later to avoid it. Auth is sent to YouTube by the selected player. No account data is sent to the plugin author, written into the source checkout or included in this repository.
 
 ## Validation and limits
 
-The setup tests use temporary config/data roots and fake commands; they cover both choices, exact source pins, build-failure preservation, desktop rollback, hide/show and uninstall ownership. The QML test loads the actual widget with fake players, checks volume isolation, vertical-slider direction, queue scrolling and Original-mode capability gating. Full clean-OS testing is still recommended before a marketplace listing.
+The setup tests use temporary config/data roots and fake commands; they cover both choices, exact source pins, build-failure preservation, desktop rollback, hide/show and uninstall ownership. Coexistence tests verify that normal uninstall and purge preserve other players' files in the old shared directories, with both default and custom XDG locations. The QML test loads the actual widget with fake players, checks volume isolation, vertical-slider direction, queue scrolling and Original-mode capability gating. Full clean-OS testing is still recommended before a marketplace listing.
 
 ```sh
 python3 -m unittest discover -s tests -p test_setup.py -v

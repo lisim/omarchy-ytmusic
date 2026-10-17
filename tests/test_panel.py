@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix="music-panel-test-") as directory:
     shutil.copy2(root.parent / "MusicWidget.qml", target / "MusicWidget.qml")
     for module in ("Ui", "Commons"):
         (target / module).symlink_to(Path("/usr/share/omarchy/shell") / module)
-    config = target / "config/omarchy-ytmusic"
+    config = target / "config/lisim-ytmusic"
     config.mkdir(parents=True)
     (config / "settings.json").write_text('{"backend":"custom","browser":"later"}')
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=str(target / "config"))

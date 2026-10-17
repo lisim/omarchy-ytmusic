@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "lisim.ytmusic",
-  "name": "YouTube Music",
-  "version": "1.0.0",
+  "name": "YouTube Music TUI (lisim)",
+  "version": "1.0.1",
   "author": "lisim",
   "license": "MIT",
-  "description": "YouTube Music terminal player with a floating window, playback controls, volume and Up Next.",
+  "description": "Omarchy bar integration for WakaTaira's ytmusic-tui, with original or customised player setup.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
     "barWidget": "MusicWidget.qml"
   },
   "barWidget": {
-    "displayName": "YouTube Music",
+    "displayName": "YouTube Music TUI (lisim)",
     "description": "Play music, show/hide the TUI and control its queue.",
     "category": "Media",
     "allowMultiple": false,

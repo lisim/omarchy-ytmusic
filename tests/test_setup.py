@@ -163,6 +163,46 @@ class SetupTests(unittest.TestCase):
             desktop.assert_not_called()
         self.assertTrue(foreign.is_dir())
 
+    def test_uninstall_preserves_other_players_in_shared_legacy_directories(self):
+        for use_xdg in (False, True):
+            for purge in (False, True):
+                with self.subTest(xdg=use_xdg, purge=purge), tempfile.TemporaryDirectory() as directory:
+                    home = Path(directory)
+                    roots = {"XDG_CONFIG_HOME": home / "config", "XDG_DATA_HOME": home / "data",
+                             "XDG_CACHE_HOME": home / "cache"} if use_xdg else {}
+                    paths = music.Paths({k: str(v) for k, v in roots.items()}, user_home=home)
+                    foreign = {
+                        roots.get("XDG_CONFIG_HOME", home / ".config") / "omarchy-ytmusic/browser.json": b"dummy-damir-auth",
+                        roots.get("XDG_CACHE_HOME", home / ".cache") / "omarchy-ytmusic/session.json": b"dummy-damir-queue",
+                        roots.get("XDG_DATA_HOME", home / ".local/share") / "omarchy-ytmusic/venv/foreign-runtime": b"dummy-pradeep-runtime",
+                    }
+                    for path, content in foreign.items():
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(content)
+                    for owned in (paths.config, paths.data, paths.cache):
+                        owned.mkdir(parents=True, exist_ok=True)
+                        (owned / "owned-sentinel").write_text("ours")
+                    with patch.object(music, "own_window", return_value=None), \
+                         patch.object(music, "confirm", return_value=True), patch.object(music, "update_desktop"):
+                        music.uninstall(paths, purge=purge)
+                    for path, content in foreign.items():
+                        self.assertTrue(path.is_file(), f"Removed another player's file: {path}")
+                        self.assertEqual(path.read_bytes(), content)
+                    self.assertFalse(paths.data.exists())
+                    self.assertFalse(paths.cache.exists())
+                    self.assertEqual(paths.config.exists(), not purge)
+
+    def test_legacy_shared_settings_do_not_configure_new_install(self):
+        legacy = self.root / ".config/omarchy-ytmusic/settings.json"
+        legacy.parent.mkdir(parents=True)
+        content = '{"backend":"custom","browser":"later","auto_refresh":false}'
+        legacy.write_text(content)
+        self.assertIsNone(music.load_settings(self.paths))
+        with patch.object(music, "own_window", return_value=None), patch.object(music, "configure") as setup:
+            music.toggle(self.paths)
+        setup.assert_called_once()
+        self.assertEqual(legacy.read_text(), content)
+
     def test_invalid_refresh_preference_is_rejected(self):
         music.atomic_write(self.paths.settings, json.dumps({"backend":"custom", "browser":"chrome", "auto_refresh":"yes"}))
         with self.assertRaises(ValueError):

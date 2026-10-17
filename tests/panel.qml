@@ -9,7 +9,7 @@ ShellRoot {
     TestCase { id: checks; name: "MusicPanel"; when: false }
     FileView {
       id: setupWriter
-      path: Quickshell.env("XDG_CONFIG_HOME") + "/omarchy-ytmusic/settings.json"
+      path: Quickshell.env("XDG_CONFIG_HOME") + "/lisim-ytmusic/settings.json"
       printErrors: false
     }
     Timer {

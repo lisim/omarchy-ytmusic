@@ -27,9 +27,9 @@ class Paths:
         env = os.environ if env is None else env
         self.user_home = Path.home() if user_home is None else Path(user_home)
         self.config_root = Path(env.get("XDG_CONFIG_HOME") or self.user_home / ".config")
-        self.config = self.config_root / "omarchy-ytmusic"
-        self.data = Path(env.get("XDG_DATA_HOME") or self.user_home / ".local/share") / "omarchy-ytmusic"
-        self.cache = Path(env.get("XDG_CACHE_HOME") or self.user_home / ".cache") / "omarchy-ytmusic"
+        self.config = self.config_root / "lisim-ytmusic"
+        self.data = Path(env.get("XDG_DATA_HOME") or self.user_home / ".local/share") / "lisim-ytmusic"
+        self.cache = Path(env.get("XDG_CACHE_HOME") or self.user_home / ".cache") / "lisim-ytmusic"
         self.runtime = Path(env["XDG_RUNTIME_DIR"]) if env.get("XDG_RUNTIME_DIR") else None
         self.settings = self.config / "settings.json"
         self.bindings = self.config_root / "hypr/bindings.lua"
@@ -207,7 +207,7 @@ def desktop_block(shortcut):
     if shortcut:
         command = shlex.join([sys.executable, str(Path(__file__).resolve()), "toggle"])
         lines += ['hl.unbind("SUPER + SHIFT + M")',
-                  'o.bind("SUPER + SHIFT + M", "YouTube Music", ' + json.dumps(command, ensure_ascii=False) + ')']
+                  'o.bind("SUPER + SHIFT + M", "YouTube Music TUI (lisim)", ' + json.dumps(command, ensure_ascii=False) + ')']
     lines += ['o.window({ class = "^lisim-ytmusic$" }, { float = true, center = true, size = { "monitor_w * 0.75", "monitor_h * 0.75" } })', END]
     return "\n".join(lines) + "\n"
 
@@ -239,7 +239,7 @@ def update_desktop(paths, shortcut=None):
 
 
 def setup(paths):
-    print("YouTube Music for Omarchy\n")
+    print("YouTube Music TUI (lisim)\n")
     print("Builds a pinned player from source. No prebuilt executable is downloaded.")
     print("First build: usually 2–10 minutes. Existing upstream settings are preserved.")
     if own_window():
@@ -303,7 +303,7 @@ def uninstall(paths, purge=False):
         return
     owned_paths = (paths.data, paths.cache, *([paths.config] if purge else []))
     for path in owned_paths:
-        if path.name != "omarchy-ytmusic" or path.is_symlink():
+        if path.name != "lisim-ytmusic" or path.is_symlink():
             raise ValueError("Refusing an unexpected cleanup path")
     update_desktop(paths)
     for path in owned_paths:
