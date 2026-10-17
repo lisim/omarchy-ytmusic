@@ -251,6 +251,7 @@ def setup(paths):
     backend = ("custom", "original")[choose("Choose your player", [
         "Customised (recommended): helper, Home cards/mixes, terminal colours, volume and Up Next",
         "Original upstream: basic controls; no custom helper, panel volume or Up Next"])]
+    print("\nBrowser sign-in reads that browser's YouTube session locally and sends it only to YouTube.")
     browser = BROWSERS[choose("Which browser is signed into YouTube Music?", list(BROWSERS), 0)]
     refresh = browser not in ("manual", "later") and backend == "custom" and confirm("Refresh YouTube sign-in from this browser on future launches?", True)
     shortcut = confirm("Use Super+Shift+M for show/hide? This replaces its current Music shortcut.")
@@ -271,6 +272,7 @@ def setup(paths):
             if browser == "manual" or not confirm("Browser sign-in failed. Use the upstream manual header-paste method now?"):
                 raise ValueError("Sign-in was not completed. Run setup again to retry.")
             run([paths.binary(backend), "auth"], env=player_env(paths, backend), timeout=600)
+            browser, refresh = "manual", False
     update_desktop(paths, shortcut)
     state = {"backend": backend, "browser": browser, "auto_refresh": refresh, "shortcut": shortcut, "commit": specs[backend]["commit"]}
     atomic_write(paths.settings, json.dumps(state, indent=2) + "\n")

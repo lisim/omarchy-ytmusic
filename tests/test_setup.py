@@ -91,6 +91,19 @@ class SetupTests(unittest.TestCase):
             calls.assert_not_called()
         self.assertEqual(self.paths.binary("custom").read_text(), "fake compiled executable")
 
+    def test_manual_auth_fallback_is_not_overwritten_by_browser_refresh(self):
+        (self.root / "backends.json").write_text(json.dumps({"custom":{"commit":"a" * 40}}))
+        with patch.object(music, "ROOT", self.root), patch.object(music, "own_window", return_value=None), \
+             patch.object(music.shutil, "which", return_value="/usr/bin/test"), \
+             patch.object(music, "choose", side_effect=[0, 0]), \
+             patch.object(music, "confirm", side_effect=[True, False, True, False]), \
+             patch.object(music, "build_backend"), patch.object(music, "update_desktop"), \
+             patch.object(music, "run", side_effect=[subprocess.CalledProcessError(1, ["auth"]), subprocess.CompletedProcess([], 0)]):
+            music.setup(self.paths)
+        state = music.load_settings(self.paths)
+        self.assertEqual(state["browser"], "manual")
+        self.assertFalse(state["auto_refresh"])
+
     def test_failed_build_preserves_previous_binary(self):
         self.settings()
         source = {"repository": "https://github.com/lisim/ytmusic-tui.git", "commit": "b" * 40}
