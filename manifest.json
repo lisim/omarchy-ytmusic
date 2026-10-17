@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "lisim.ytmusic",
+  "name": "YouTube Music",
+  "version": "1.0.0",
+  "author": "lisim",
+  "license": "MIT",
+  "description": "YouTube Music terminal player with a floating window, playback controls, volume and Up Next.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "MusicWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "YouTube Music",
+    "description": "Play music, show/hide the TUI and control its queue.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}

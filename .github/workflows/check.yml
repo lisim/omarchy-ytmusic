@@ -1,0 +1,25 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -p test_setup.py -v
+      - run: python -m py_compile scripts/ytmusic.py
+      - name: Check release pins and manifest entrypoints
+        run: |
+          python - <<'PYCODE'
+          import json, pathlib, re
+          manifest = json.loads(pathlib.Path('manifest.json').read_text())
+          assert manifest['id'] == 'lisim.ytmusic'
+          assert all(pathlib.Path(p).is_file() for p in manifest['entryPoints'].values())
+          pins = json.loads(pathlib.Path('backends.json').read_text())
+          assert set(pins) == {'custom', 'original'}
+          assert all(re.fullmatch('[0-9a-f]{40}', p['commit']) for p in pins.values())
+          PYCODE
